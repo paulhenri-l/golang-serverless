@@ -1,4 +1,4 @@
-name: Tests
+name: Go Tests
 
 on:
   push:
@@ -38,8 +38,7 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Install deps
-        run: |
-          go get
+        run: "go get ./..."
 
       - name: Run tests
         run: "go test ./... -timeout 10s"
