@@ -20,10 +20,17 @@ prepare_build: clean
 build: prepare_build
 	@for function in $(cmds) ; do \
 		cd .build && \
-		env GOARCH=amd64 GOOS=linux go build -ldflags="-s -w" -o bin/$$function cmd/$$function/main.go ; \
+		env GOARCH=amd64 GOOS=linux go build -ldflags="-s -w" -o bin/$$function cmd/$$function/main.go && \
+		cd .. ; \
 	done
 
 deploy_sandbox: build
 	cd .build && \
 	sls deploy --stage sandbox --aws-profile sandbox && \
 	cd ../ && rm -rf .build
+
+test:
+	go test ./...
+
+serve:
+	go run ./cmd/local/main.go
