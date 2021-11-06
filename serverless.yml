@@ -1,0 +1,108 @@
+service: golang-serverless
+
+useDotenv: true
+configValidationMode: error
+variablesResolutionMode: 20210326
+
+provider:
+  name: aws
+  region: eu-west-3
+  stage: ${opt:stage, 'staging'}
+  runtime: go1.x
+  lambdaHashingVersion: 20201221
+  memorySize: ${self:custom.${self:provider.stage}.functions_memory}
+
+  deploymentBucket:
+    name: ${ssm:/phl-infra-${self:provider.stage}/serverless/deployment-bucket-name}
+
+  #vpc:
+  #  subnetIds: ${ssm:/phl-infra-${self:provider.stage}/vpc/private-subnets}
+  #  securityGroupIds:
+  #    - ${ssm:/phl-infra-${self:provider.stage}/vpc/lambda-default-sg-id}
+
+  logs:
+    httpApi: true
+
+  environment:
+    APP_ENV: ${self:provider.stage}
+    SLS_APP_VERSION: ${file(./APP_VERSION), '0.0.0'}
+
+  stackTags:
+    "phl:project": "phl"
+    "phl:part-of": "poke"
+    "phl:name": "golang-serverless"
+    "phl:stage": var.stage
+    "phl:managed-by": "serverless"
+
+  iam:
+    role:
+      name: laravel-serverless-${self:provider.stage}
+      statements:
+        - Effect: 'Allow'
+          Resource:
+            - ${ssm:/phl-infra-${self:provider.stage}/secrets/kms-lambda-key-arn}
+            - ${ssm:/phl-infra-${self:provider.stage}/secrets/kms-secrets-key-arn}
+          Action:
+            - kms:Decrypt
+            - kms:Encrypt
+            - kms:CreateGrant
+
+package:
+  patterns:
+    - "!./*"
+    - "!./*/**"
+    - "bin/**"
+    - ".env.${opt:stage, 'staging'}"
+
+functions:
+  web:
+    handler: bin/web
+    timeout: 5
+    kmsKeyArn: ${ssm:/phl-infra-${self:provider.stage}/secrets/kms-lambda-key-arn}
+    reservedConcurrency: ${self:custom.${self:provider.stage}.web_reserved_concurrency}
+    events:
+      - httpApi: '*'
+
+plugins:
+  - serverless-domain-manager
+  - serverless-prune-plugin
+
+resources:
+  extensions:
+    HttpApiLogGroup:
+      Properties:
+        RetentionInDays: 7
+
+    HttpApiStage:
+      Properties:
+        DefaultRouteSettings:
+          DetailedMetricsEnabled: true
+          ThrottlingRateLimit: ${self:custom.${self:provider.stage}.http_rate_limit}
+          ThrottlingBurstLimit: ${self:custom.${self:provider.stage}.http_burst_limit}
+
+custom:
+  sandbox:
+    domain_name: "golang-serverless.phl.tools"
+    acm_cert_name: "*.phl.tools"
+    http_rate_limit: 5
+    http_burst_limit: 5
+    functions_log_retention: 7
+    functions_memory: 256
+    web_reserved_concurrency: 5
+
+  logRetentionInDays: ${self:custom.${self:provider.stage}.functions_log_retention}
+
+  prune:
+    automatic: true
+    number: 3
+
+  customDomain:
+    http:
+      domainName: ${self:custom.${self:provider.stage}.domain_name}
+      basePath: ""
+      autoDomain: true
+      securityPolicy: tls_1_2
+      endpointType: "regional"
+      createRoute53Record: true
+      stage: ${self:provider.stage}
+      certificateName: ${self:custom.${self:provider.stage}.acm_cert_name}
